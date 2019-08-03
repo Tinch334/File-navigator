@@ -1,0 +1,158 @@
+import shutil, os, send2trash, re
+from colorama import *
+from keyboard import is_pressed
+from time import sleep
+from msvcrt import kbhit, getch
+
+
+init(autoreset = True)
+
+
+
+class FileNavigator:
+	def __init__(self):
+		self.cursor_pos = 0
+		self.previous_cursor_pos = 0
+		self.elem_list = []
+		self.previous_value = 0#0 means none, 1 means b'\xe0' and 2 means b'\r'
+		self.copy_path = ""
+		#System variables/functions
+		os.system("mode con:cols=140 lines=45")
+		os.chdir(r"C:\Users\Martin\Desktop")		
+		#Uncategorized variables
+		self.folder_end_regex = re.compile(r' - \d+ bytes')
+		self.p_indicator = False
+
+
+	def pos(self, x, y):
+		return "\x1b[" + str(y) + ";" + str(x) + "H"
+
+
+	def clear_screen(self):
+		os.system("cls" if os.name == "nt" else "clear")
+
+
+	def print_elem_list(self):
+		self.clear_screen()
+		print(Back.BLUE + " "*140)
+		print(self.pos(1, 1) + Back.BLUE + "File navigator V.1.0			C to copy  P to paste   E erase")
+		print(self.pos(1, 2) + Back.BLUE + " "*140)
+		print(self.pos(1, 2) + Back.BLUE + os.getcwd())
+
+		for a in range(len(self.elem_list)):
+				if a == self.cursor_pos:
+					print(Back.WHITE + Fore.BLACK + self.elem_list[a])
+				else:
+					print(self.elem_list[a])
+
+
+	def folder_movement(self, where):
+		if where == "up":
+			os.chdir("..")
+			self.cursor_pos = 0
+
+		else:
+			directory = os.path.join(".", self.end_string_remover(where))
+			if os.path.isdir(directory):
+				os.chdir(directory)
+				self.cursor_pos = 0
+
+		self.file_size_calculator()
+		self.ui(True)
+
+
+	def end_string_remover(self, string):
+		match = self.folder_end_regex.search(string)
+		return string[:len(string) - len(match.group())]
+
+		
+
+################################################################################################################################################
+
+	def file_size_calculator(self):
+		self.elem_list = []
+
+		for elem in os.listdir("."):
+			if os.path.isfile(os.path.join(".", elem)):
+				self.elem_list.append(elem + " - " + str(os.path.getsize(os.path.join(".", elem))) + " bytes")
+
+			else:
+				folder_size = 0
+				for folder_name, subfolders, files in os.walk(elem) :
+						for file in files:
+							folder_size += os.path.getsize(os.path.join(folder_name, file))
+
+				self.elem_list.append(elem + " - " + str(folder_size) + " bytes")
+
+
+	def ui(self, force_update = False):
+		if force_update:
+			self.print_elem_list()
+		else:
+			if self.cursor_pos != self.previous_cursor_pos:
+				self.previous_cursor_pos = self.cursor_pos
+				self.print_elem_list()
+
+
+	def key_detection(self):
+		#msvcrt will return '\xe0'.Then 'H' if the up arrow was pressed and 'P' if the down arrow was pressed.b'\x1b' b'\x00'
+		if kbhit():
+			char = str(getch())
+			if self.p_indicator:
+				self.p_indicator = False
+
+			if char == r"b'\xe0'":
+				self.previous_value = 1
+
+			elif char == r"b'\r'":
+				self.previous_value = 2
+
+
+			if char == "b'H'" and self.previous_value == 1:
+				if self.cursor_pos == 0:
+					self.cursor_pos = len(self.elem_list) - 1
+				else:
+					self.cursor_pos -= 1
+				self.previous_value = 0
+
+			elif char == "b'P'" and self.previous_value == 1:
+				if self.cursor_pos == len(self.elem_list) - 1:
+					self.cursor_pos = 0
+				else: 
+					self.cursor_pos += 1
+				self.previous_value = 0
+				self.p_indicator = True
+
+			elif char == "b'I'" and self.previous_value == 1:
+				self.folder_movement("up")
+				self.previous_value = 0
+
+			elif char == r"b'\x00'" and self.previous_value == 2:
+				self.folder_movement(self.elem_list[self.cursor_pos])
+				self.previous_value = 0
+
+			if char == "b'c'" or char == "b'C'":
+				if len(self.elem_list) > 0:
+					self.copy_path = os.path.join(".", self.end_string_remover(self.elem_list[self.cursor_pos]))
+
+			elif char == "b'p'" or char == "b'P'":
+				if self.p_indicator == False:
+					if self.copy_path != "":
+						shutil.copy(self.copy_path, ".")
+						self.file_size_calculator()
+						self.ui(True)
+
+			elif char == "b'e'" or char == "b'E'":
+				if len(self.elem_list) > 0:
+					send2trash.send2trash(os.path.join(".", self.end_string_remover(self.elem_list[self.cursor_pos])))
+					self.file_size_calculator()
+					self.ui(True)
+
+
+
+file_navigator = FileNavigator()
+file_navigator.file_size_calculator()
+file_navigator.ui(True)
+while True:
+	file_navigator.ui()
+	file_navigator.key_detection()
